@@ -12,8 +12,12 @@ Environment variables (can be set in a .env file):
   TELEGRAM_CHAT_ID      - Telegram chat/channel ID
 """
 
+import sys
 import time
 from datetime import datetime
+
+# Disable stdout buffering so logs appear immediately in Railway
+sys.stdout.reconfigure(line_buffering=True)
 
 from dotenv import load_dotenv
 
