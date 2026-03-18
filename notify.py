@@ -21,7 +21,10 @@ def send_telegram(message: str) -> None:
         return
     try:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        requests.post(url, json={"chat_id": chat_id, "text": message}, timeout=5)
+        resp = requests.post(url, json={"chat_id": chat_id, "text": message}, timeout=5)
+        data = resp.json()
+        if not data.get("ok"):
+            print(f"  [Telegram error] {data}")
     except Exception as e:
         print(f"  [Telegram error] {e}")
 

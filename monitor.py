@@ -49,12 +49,16 @@ def check_and_notify(game: dict) -> None:
     minutes_left = game["clock_seconds"] / 60.0
     label = period_label(game["period"])
 
-    for threshold in THRESHOLDS:
+    for threshold in sorted(THRESHOLDS):
         key = (game["id"], game["period"], threshold)
         if key in sent or minutes_left > threshold:
             continue
 
         sent.add(key)
+        # Mark larger thresholds as already handled so we don't spam on startup
+        for t in THRESHOLDS:
+            if t > threshold:
+                sent.add((game["id"], game["period"], t))
 
         away = game["away_name"]
         home = game["home_name"]
@@ -76,6 +80,7 @@ def check_and_notify(game: dict) -> None:
 
 def run() -> None:
     log("March Madness notifier started. Polling ESPN every 30s...")
+    notify("\U0001f3c0 March Madness notifier started. Watching for close games...")
     while True:
         try:
             games = fetch_games()
