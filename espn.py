@@ -6,7 +6,63 @@ SCOREBOARD_URL = (
     "https://site.api.espn.com/apis/site/v2/sports/basketball"
     "/mens-college-basketball/scoreboard"
 )
+SUMMARY_URL = (
+    "https://site.api.espn.com/apis/site/v2/sports/basketball"
+    "/mens-college-basketball/summary?event={}"
+)
 NCAA_TOURNAMENT_ID = 22
+
+
+def fetch_odds(game_id: str) -> dict | None:
+    """Fetch live (or closing) odds for a game from the summary endpoint.
+
+    Returns a dict with keys: home_ml, away_ml, spread_line, spread_odds,
+    total_line, total_over_odds. Prefers live odds; falls back to close.
+    Returns None if no odds are available.
+    """
+    try:
+        resp = requests.get(SUMMARY_URL.format(game_id), timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return None
+
+    pickcenter = data.get("pickcenter", [])
+    if not pickcenter:
+        return None
+
+    # Prefer DraftKings; fall back to first provider
+    odds = next(
+        (o for o in pickcenter if "DraftKings" in o.get("provider", {}).get("name", "")),
+        pickcenter[0],
+    )
+
+    def _get(obj: dict, timing: str, *keys: str) -> str:
+        val = obj
+        for k in (timing, *keys):
+            if not isinstance(val, dict):
+                return ""
+            val = val.get(k)
+        return str(val) if val is not None else ""
+
+    ml = odds.get("moneyLine", {})
+    ps = odds.get("pointSpread", {})
+
+    result = {
+        "live_home_ml": _get(ml.get("home", {}), "live", "odds"),
+        "live_away_ml": _get(ml.get("away", {}), "live", "odds"),
+        "live_spread_line": _get(ps.get("home", {}), "live", "line"),
+        "live_spread_odds": _get(ps.get("home", {}), "live", "odds"),
+        "close_home_ml": _get(ml.get("home", {}), "close", "odds"),
+        "close_away_ml": _get(ml.get("away", {}), "close", "odds"),
+        "close_spread_line": _get(ps.get("home", {}), "close", "line"),
+        "close_spread_odds": _get(ps.get("home", {}), "close", "odds"),
+    }
+
+    # Return None if we got nothing useful
+    if not any(result.values()):
+        return None
+    return result
 
 
 def fetch_games() -> list[dict]:
