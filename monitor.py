@@ -27,8 +27,8 @@ from notify import notify
 
 load_dotenv()
 
-CLOSE_GAME_MARGIN = 20       # points
-THRESHOLDS = [19, 16, 11, 8, 5, 3, 1]      # minutes remaining to notify at
+CLOSE_GAME_MARGIN = 6       # points
+THRESHOLDS = [8, 5, 3, 1]      # minutes remaining to notify at
 POLL_INTERVAL = 30          # seconds between API calls
 
 # In-memory dedup: (game_id, period, threshold_minutes)
@@ -53,6 +53,8 @@ def log(msg: str) -> None:
 
 
 def check_and_notify(game: dict) -> None:
+    if game["period"] < 2:
+        return
     if game["score_diff"] > CLOSE_GAME_MARGIN:
         return
 
@@ -70,43 +72,58 @@ def check_and_notify(game: dict) -> None:
             if t > threshold:
                 sent.add((game["id"], game["period"], t))
 
-        away = game["away_name"]
-        home = game["home_name"]
+        def ranked(name: str, rank: int | None) -> str:
+            return f"#{rank} {name}" if rank else name
+
+        away = ranked(game["away_name"], game.get("away_rank"))
+        home = ranked(game["home_name"], game.get("home_rank"))
         away_s = game["away_score"]
         home_s = game["home_score"]
         clock = game["display_clock"]
         broadcast = game.get("broadcast", "")
 
-        channel_line = f"Watch on {broadcast}\n" if broadcast else ""
+        channel_line = f"\U0001f4fa {broadcast}\n" if broadcast else ""
 
         live_odds = game.get("odds") or fetch_live_odds(game["home_display_name"], game["away_display_name"])
         open_odds = pregame_odds.get(game["id"])
 
-        def fmt_odds(o: dict) -> str:
-            def sign(v):
-                try:
-                    return f"+{v}" if float(v) > 0 else str(v)
-                except (TypeError, ValueError):
-                    return str(v) if v is not None else ""
-            ml = f"ML: {away} {sign(o['away_ml'])} / {home} {sign(o['home_ml'])}" if o.get("away_ml") else ""
-            spread = f"Spread: {o['spread_line']} ({sign(o['spread_odds'])})" if o.get("spread_line") else ""
-            return "  |  ".join(p for p in [ml, spread] if p)
+        def sign(v):
+            try:
+                return f"+{v}" if float(v) > 0 else str(v)
+            except (TypeError, ValueError):
+                return str(v) if v is not None else ""
 
-        odds_parts = []
-        if open_odds:
-            s = fmt_odds(open_odds)
-            if s:
-                odds_parts.append(f"Open: {s}")
-        if live_odds:
-            s = fmt_odds(live_odds)
-            if s:
-                odds_parts.append(f"Live: {s}")
-        odds_line = "\n".join(odds_parts) + "\n" if odds_parts else ""
+        def fmt_ml(o: dict) -> str:
+            if not o.get("away_ml"):
+                return ""
+            return f"{sign(o['away_ml'])} / {sign(o['home_ml'])}"
+
+        def fmt_spread(o: dict) -> str:
+            if not o.get("spread_line"):
+                return ""
+            return f"{o['spread_line']} ({sign(o['spread_odds'])})"
+
+        odds_lines = []
+        ml_live = fmt_ml(live_odds) if live_odds else ""
+        ml_open = fmt_ml(open_odds) if open_odds else ""
+        if ml_live or ml_open:
+            current = ml_live or ml_open
+            was = f" (open: {ml_open})" if ml_open and ml_live and ml_open != ml_live else ""
+            odds_lines.append(f"ML: {current}{was}")
+
+        sp_live = fmt_spread(live_odds) if live_odds else ""
+        sp_open = fmt_spread(open_odds) if open_odds else ""
+        if sp_live or sp_open:
+            current = sp_live or sp_open
+            was = f" (open: {sp_open})" if sp_open and sp_live and sp_open != sp_live else ""
+            odds_lines.append(f"Spread: {current}{was}")
+
+        odds_line = "\n".join(odds_lines) + "\n" if odds_lines else ""
 
         message = (
             f"\U0001f3c0 CLOSE GAME \u2014 March Madness\n"
             f"{away} {away_s}  \u2013  {home} {home_s}\n"
-            f"{clock} left in {label}\n"
+            f"{label}, {clock}\n"
             f"{odds_line}"
             f"{channel_line}"
         ).rstrip()

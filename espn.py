@@ -54,6 +54,13 @@ def _parse_game(event: dict) -> dict | None:
     home_display_name = home.get("team", {}).get("displayName", home_name)
     away_display_name = away.get("team", {}).get("displayName", away_name)
 
+    def _rank(competitor: dict) -> int | None:
+        r = competitor.get("curatedRank", {}).get("current")
+        return r if r and r < 99 else None
+
+    home_rank = _rank(home)
+    away_rank = _rank(away)
+
     # Broadcast channel: prefer the simple string, fall back to broadcasts array
     broadcast = competition.get("broadcast", "")
     if not broadcast:
@@ -74,6 +81,8 @@ def _parse_game(event: dict) -> dict | None:
         "away_display_name": away_display_name,
         "home_score": home_score,
         "away_score": away_score,
+        "home_rank": home_rank,
+        "away_rank": away_rank,
         "score_diff": abs(home_score - away_score),
         "broadcast": broadcast,
         "odds": odds,
