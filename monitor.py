@@ -89,7 +89,8 @@ def check_and_notify(game: dict) -> None:
 
         def sign(v):
             try:
-                return f"+{v}" if float(v) > 0 else str(v)
+                s = str(v).strip()
+                return f"+{s.lstrip('+')}" if float(s) > 0 else s
             except (TypeError, ValueError):
                 return str(v) if v is not None else ""
 
