@@ -10,8 +10,10 @@ Environment variables (can be set in a .env file):
   SLACK_WEBHOOK_URL     - Slack incoming webhook URL
   TELEGRAM_BOT_TOKEN    - Telegram bot token
   TELEGRAM_CHAT_ID      - Telegram chat/channel ID
+  DISABLE_ODDS          - Set to 1 to show only spread movement (closed vs live, no ML)
 """
 
+import os
 import sys
 import time
 from datetime import datetime
@@ -27,6 +29,7 @@ from notify import notify
 
 load_dotenv()
 
+DISABLE_ODDS = os.environ.get("DISABLE_ODDS", "").lower() in ("1", "true", "yes")
 CLOSE_GAME_MARGIN = 6       # points
 THRESHOLDS = [8, 5, 3, 1]      # minutes remaining to notify at
 POLL_INTERVAL = 30          # seconds between API calls
@@ -104,22 +107,55 @@ def check_and_notify(game: dict) -> None:
                 return ""
             return f"{o['spread_line']} ({sign(o['spread_odds'])})"
 
-        odds_lines = []
-        ml_live = fmt_ml(live_odds) if live_odds else ""
-        ml_open = fmt_ml(open_odds) if open_odds else ""
-        if ml_live or ml_open:
-            current = ml_live or ml_open
-            was = f" (open: {ml_open})" if ml_open and ml_live and ml_open != ml_live else ""
-            odds_lines.append(f"ML: {current}{was}")
+        if DISABLE_ODDS:
+            open_line = open_odds.get("spread_line") if open_odds else None
+            live_line = live_odds.get("spread_line") if live_odds else None
+            ref_line = open_line or live_line
+            if ref_line:
+                try:
+                    flip = float(ref_line) > 0  # positive = away is favorite
+                except (TypeError, ValueError):
+                    flip = False
+                favorite = away if flip else home
 
-        sp_live = fmt_spread(live_odds) if live_odds else ""
-        sp_open = fmt_spread(open_odds) if open_odds else ""
-        if sp_live or sp_open:
-            current = sp_live or sp_open
-            was = f" (open: {sp_open})" if sp_open and sp_live and sp_open != sp_live else ""
-            odds_lines.append(f"Spread: {current}{was}")
+                def fmt_line(line: str | None) -> str | None:
+                    if not line:
+                        return None
+                    try:
+                        v = -float(line) if flip else float(line)
+                        return f"+{v:.1f}" if v > 0 else f"{v:.1f}"
+                    except (TypeError, ValueError):
+                        return None
 
-        odds_line = "\n".join(odds_lines) + "\n" if odds_lines else ""
+                open_str = fmt_line(open_line)
+                live_str = fmt_line(live_line)
+                parts = []
+                if open_str:
+                    parts.append(f"closed {open_str}")
+                if live_str and open_str and live_str != open_str:
+                    parts.append(f"now {live_str}")
+                elif live_str and not open_str:
+                    parts.append(live_str)
+                odds_line = f"Spread ({favorite}): {', '.join(parts)}\n" if parts else ""
+            else:
+                odds_line = ""
+        else:
+            odds_lines = []
+            ml_live = fmt_ml(live_odds) if live_odds else ""
+            ml_open = fmt_ml(open_odds) if open_odds else ""
+            if ml_live or ml_open:
+                current = ml_live or ml_open
+                was = f" (open: {ml_open})" if ml_open and ml_live and ml_open != ml_live else ""
+                odds_lines.append(f"ML: {current}{was}")
+
+            sp_live = fmt_spread(live_odds) if live_odds else ""
+            sp_open = fmt_spread(open_odds) if open_odds else ""
+            if sp_live or sp_open:
+                current = sp_live or sp_open
+                was = f" (open: {sp_open})" if sp_open and sp_live and sp_open != sp_live else ""
+                odds_lines.append(f"Spread: {current}{was}")
+
+            odds_line = "\n".join(odds_lines) + "\n" if odds_lines else ""
 
         message = (
             f"\U0001f3c0 CLOSE GAME \u2014 March Madness\n"
